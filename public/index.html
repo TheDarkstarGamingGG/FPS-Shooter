@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Multiplayer 3D World</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
+    canvas { display: block; }
+    
+    /* Mobile Controls UI */
+    #ui { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; pointer-events: none; }
+    .btn { width: 60px; height: 60px; background: rgba(0, 255, 0, 0.3); border: 2px solid #0f0; border-radius: 50%; color: #0f0; font-weight: bold; display: flex; justify-content: center; align-items: center; pointer-events: auto; user-select: none; }
+    .btn:active { background: rgba(0, 255, 0, 0.8); color: #000; }
+    #dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; pointer-events: auto; }
+    #dpad .btn { width: 50px; height: 50px; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+  </script>
+  <script src="/socket.io/socket.io.js"></script>
+
+  <div id="ui">
+    <div id="dpad">
+      <div></div><div class="btn" id="btn-w">W</div><div></div>
+      <div class="btn" id="btn-a">A</div><div class="btn" id="btn-s">S</div><div class="btn" id="btn-d">D</div>
+    </div>
+    <div class="btn" id="btn-jump" style="width: 80px; height: 80px; align-self: flex-end;">JUMP</div>
+  </div>
+
+  <script type="module" src="client.js"></script>
+</body>
+</html>
