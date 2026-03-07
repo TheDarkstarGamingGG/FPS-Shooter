@@ -54,8 +54,43 @@ io.on('connection', (socket) => {
   console.log('Connection:', socket.id);
 
   socket.on('login', async (data) => {
-    let user = await Player.findOne({ username: data.username });
-    
+    console.log(`[SERVER] Login request received for: ${data.username}`);
+    try {
+      let user = await Player.findOne({ username: data.username });
+      
+      if (!user) {
+        console.log(`[SERVER] Creating new user: ${data.username}`);
+        const hash = await bcrypt.hash(data.password, 10);
+        user = new Player({ username: data.username, password: hash });
+        
+        const types = ['iron', 'copper', 'gold', 'stone'];
+        user.plotData = { deposits: [], machines: [] };
+        types.forEach((t, i) => {
+          user.plotData.deposits.push({ type: t, id: `dep_${i}`, x: Math.random()*40 - 20, z: Math.random()*40 - 20 });
+        });
+        await user.save();
+      } else {
+        console.log(`[SERVER] Existing user found. Verifying password...`);
+        const valid = await bcrypt.compare(data.password, user.password);
+        if (!valid) {
+          console.log(`[SERVER] Invalid password for: ${data.username}`);
+          return socket.emit('loginError', 'Wrong password');
+        }
+      }
+
+      // ROOM LOGIC...
+      let roomName = 'room_1';
+      // ... (rest of your room logic here)
+
+      console.log(`[SERVER] Login successful! Sending initGame to ${data.username}`);
+      socket.emit('initGame', { offset: myOffset, plotData: user.plotData, inventory: user.inventory });
+      
+    } catch (err) {
+      console.error("[SERVER ERROR] Login failed:", err);
+      socket.emit('loginError', 'Database error. Check server logs.');
+    }
+  });
+  
     // Create account if new
     if (!user) {
       const hash = await bcrypt.hash(data.password, 10);
