@@ -2,17 +2,32 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Multiplayer 3D World</title>
+  <title>FPS Clone</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #000; touch-action: none; }
+    body { margin: 0; overflow: hidden; background: #000; touch-action: none; font-family: sans-serif; }
     canvas { display: block; }
     
-    /* Mobile Controls UI */
-    #ui { position: absolute; bottom: 20px; width: 100%; display: flex; justify-content: space-between; padding: 0 20px; box-sizing: border-box; pointer-events: none; }
-    .btn { width: 60px; height: 60px; background: rgba(0, 255, 0, 0.3); border: 2px solid #0f0; border-radius: 50%; color: #0f0; font-weight: bold; display: flex; justify-content: center; align-items: center; pointer-events: auto; user-select: none; }
-    .btn:active { background: rgba(0, 255, 0, 0.8); color: #000; }
-    #dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; pointer-events: auto; }
-    #dpad .btn { width: 50px; height: 50px; border-radius: 10px; }
+    /* Crosshair */
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; background: white; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; mix-blend-mode: difference; z-index: 10;}
+    
+    /* HUD */
+    #hud { position: absolute; top: 20px; left: 20px; color: #0f0; font-size: 24px; font-weight: bold; pointer-events: none; z-index: 10; text-shadow: 2px 2px 0 #000; }
+    #wasted { display: none; position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); color: #ff0000; font-size: 80px; font-weight: 900; font-family: Impact, sans-serif; text-shadow: 4px 4px 0 #000; z-index: 20; pointer-events: none; }
+    
+    /* Mobile Controls */
+    #mobile-ui { position: absolute; bottom: 20px; width: 100%; height: 40%; display: flex; justify-content: space-between; pointer-events: none; z-index: 5;}
+    
+    /* Left side: Movement */
+    #movement-zone { width: 40%; height: 100%; pointer-events: auto; display: flex; align-items: flex-end; padding-left: 20px; }
+    #dpad { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-bottom: 20px;}
+    .btn { width: 50px; height: 50px; background: rgba(255, 255, 255, 0.2); border: 2px solid #fff; border-radius: 10px; color: #fff; display: flex; justify-content: center; align-items: center; font-weight: bold; }
+    .btn:active { background: rgba(255, 255, 255, 0.6); }
+
+    /* Right side: Look & Shoot */
+    #look-zone { width: 50%; height: 100%; pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; padding-right: 20px; padding-bottom: 20px; gap: 10px; }
+    .action-btn { width: 70px; height: 70px; border-radius: 50%; background: rgba(255,0,0,0.4); border: 2px solid #f00; color: #fff; font-weight: bold; display: flex; justify-content: center; align-items: center; }
+    .action-btn:active { background: rgba(255,0,0,0.8); }
+    #btn-reload { background: rgba(0,255,255,0.4); border-color: #0ff; width: 60px; height: 60px;}
   </style>
 </head>
 <body>
@@ -21,12 +36,22 @@
   </script>
   <script src="/socket.io/socket.io.js"></script>
 
-  <div id="ui">
-    <div id="dpad">
-      <div></div><div class="btn" id="btn-w">W</div><div></div>
-      <div class="btn" id="btn-a">A</div><div class="btn" id="btn-s">S</div><div class="btn" id="btn-d">D</div>
+  <div id="crosshair"></div>
+  <div id="hud">HP: <span id="hp-val">100</span><br>AMMO: <span id="ammo-val">30</span>/30</div>
+  <div id="wasted">WASTED</div>
+
+  <div id="mobile-ui">
+    <div id="movement-zone">
+      <div id="dpad">
+        <div></div><div class="btn" id="btn-w">W</div><div></div>
+        <div class="btn" id="btn-a">A</div><div class="btn" id="btn-s">S</div><div class="btn" id="btn-d">D</div>
+      </div>
     </div>
-    <div class="btn" id="btn-jump" style="width: 80px; height: 80px; align-self: flex-end;">JUMP</div>
+    <div id="look-zone">
+      <div class="action-btn" id="btn-reload">RELOAD</div>
+      <div class="action-btn" id="btn-jump">JUMP</div>
+      <div class="action-btn" id="btn-shoot">FIRE</div>
+    </div>
   </div>
 
   <script type="module" src="client.js"></script>
