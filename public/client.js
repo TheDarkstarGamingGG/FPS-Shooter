@@ -1,301 +1,155 @@
 import * as THREE from 'three';
 
-const socket = io();
+window.socket = io();
 
-// 1. SCENE SETUP
+// UI Elements
+const loginScreen = document.getElementById('login-screen');
+const invDisplay = document.getElementById('inv-display');
+
+// 3D Scene Setup
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x87ceeb);
+scene.background = new THREE.Color(0x222222);
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
-dirLight.position.set(10, 20, 10);
-scene.add(dirLight);
+const light = new THREE.DirectionalLight(0xffffff, 1);
+light.position.set(10, 20, 10);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x404040));
 
-const grid = new THREE.GridHelper(200, 200, 0x000000, 0x555555);
+const grid = new THREE.GridHelper(500, 100, 0x0f0, 0x333333);
 scene.add(grid);
 
-// 2. GAME STATE & VARIABLES
-const players = {}; 
-const hitboxes = []; // Used for the Hitscan Raycaster
-let myId = null;
-let myPlayer = null;
-let isDead = false;
+// Game State
+let myOffset = { x: 0, z: 0 };
+const interactables = []; // Things we can shoot with laser
+let isMining = false;
 
-// Weapon State
-let ammo = 30;
-let isReloading = false;
-let isShooting = false;
-let lastShotTime = 0;
-const fireRate = 100; // ms between shots (Continuous fire)
+// Mining Laser Visual
+const materialLine = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 });
+const geometryLine = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+const laserLine = new THREE.Line(geometryLine, materialLine);
+scene.add(laserLine);
 
-// Physics
-const speed = 0.2;
-let velocityY = 0;
-const gravity = -0.015;
-let isGrounded = false;
+// Materials for Deposits
+const matColors = {
+  iron: 0x888888, copper: 0xb87333, gold: 0xffd700, stone: 0x555555
+};
 
-// Camera Look Variables
-let pitch = 0; // Up/Down
-let yaw = 0;   // Left/Right
-const cameraOffset = new THREE.Vector3(0, 1.5, 0); // Head height
+// Login Logic
+document.getElementById('btn-login').addEventListener('click', () => {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  if(u && p) socket.emit('login', { username: u, password: p });
+});
 
-// Raycaster for shooting
+socket.on('initGame', (data) => {
+  loginScreen.style.display = 'none';
+  myOffset = data.offset;
+  
+  // Start player in the middle of their plot
+  camera.position.set(myOffset.x, 2, myOffset.z + 10);
+  
+  updateInventoryUI(data.inventory);
+  buildPlot(data.offset, data.plotData);
+  
+  // Enable pointer lock for PC
+  document.body.requestPointerLock();
+});
+
+socket.on('spawnPlot', (data) => buildPlot(data.offset, data.plotData));
+socket.on('updateInventory', (inv) => updateInventoryUI(inv));
+
+function updateInventoryUI(inv) {
+  let str = '';
+  for(let key in inv) { if(inv[key] > 0) str += `${key}: ${inv[key]}\n`; }
+  invDisplay.innerText = str || 'Empty';
+}
+
+function buildPlot(offset, plotData) {
+  // Build Deposits
+  plotData.deposits.forEach(dep => {
+    const geo = new THREE.BoxGeometry(2, 2, 2);
+    const mat = new THREE.MeshStandardMaterial({ color: matColors[dep.type] });
+    const mesh = new THREE.Mesh(geo, mat);
+    // Apply local coordinates + room offset
+    mesh.position.set(offset.x + dep.x, 1, offset.z + dep.z);
+    mesh.userData = { isDeposit: true, type: dep.type };
+    scene.add(mesh);
+    interactables.push(mesh);
+  });
+}
+
+// Input & Mining Logic
+const keys = { w: false, a: false, s: false, d: false };
 const raycaster = new THREE.Raycaster();
 const screenCenter = new THREE.Vector2(0, 0);
 
-// 3. THE AK-47 MODEL
-scene.add(camera); // Camera must be in scene to hold the gun
-const gunGroup = new THREE.Group();
-const barrel = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.4), new THREE.MeshStandardMaterial({color: 0x222222}));
-barrel.position.z = -0.2;
-const mag = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.15, 0.1), new THREE.MeshStandardMaterial({color: 0x111111}));
-mag.position.set(0, -0.1, -0.1);
-gunGroup.add(barrel); gunGroup.add(mag);
-gunGroup.position.set(0.3, -0.3, -0.5); // Bottom right of vision
-camera.add(gunGroup);
+document.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; });
+document.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
+document.addEventListener('mousedown', () => startMining());
+document.addEventListener('mouseup', () => stopMining());
 
-// 4. NETWORKING
-socket.on('currentPlayers', (serverPlayers) => {
-  myId = socket.id;
-  for (let id in serverPlayers) {
-    if(!serverPlayers[id].isDead) addPlayer(id, serverPlayers[id]);
-  }
-});
+const mineBtn = document.getElementById('btn-mine');
+mineBtn.addEventListener('touchstart', e => { e.preventDefault(); startMining(); });
+mineBtn.addEventListener('touchend', e => { e.preventDefault(); stopMining(); });
 
-socket.on('newPlayer', (data) => addPlayer(data.id, data.player));
-
-socket.on('playerMoved', (data) => {
-  if (players[data.id]) {
-    players[data.id].position.set(data.x, data.y, data.z);
-    players[data.id].rotation.y = data.yaw; // Turn their body to face where they are looking
-  }
-});
-
-socket.on('healthUpdated', (data) => {
-  if(data.id === myId) {
-    document.getElementById('hp-val').innerText = Math.max(0, data.hp);
-  }
-});
-
-socket.on('playerDied', (id) => {
-  if (id === myId) {
-    isDead = true;
-    document.getElementById('wasted').style.display = 'block';
-  }
-  if (players[id]) {
-    scene.remove(players[id]);
-    const index = hitboxes.indexOf(players[id]);
-    if (index > -1) hitboxes.splice(index, 1);
-    delete players[id];
-  }
-});
-
-socket.on('playerRespawned', (data) => {
-  if (data.id === myId) {
-    isDead = false;
-    document.getElementById('wasted').style.display = 'none';
-    document.getElementById('hp-val').innerText = "100";
-    ammo = 30; document.getElementById('ammo-val').innerText = ammo;
-  }
-  addPlayer(data.id, data.player);
-});
-
-socket.on('playerDisconnected', (id) => {
-  if (players[id]) { scene.remove(players[id]); delete players[id]; }
-});
-
-// Humanoid Builder
-function addPlayer(id, data) {
-  const group = new THREE.Group();
-  
-  // Torso
-  const bodyGeo = new THREE.BoxGeometry(0.8, 1.2, 0.4);
-  const bodyMat = new THREE.MeshStandardMaterial({ color: data.color });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = 0.6;
-  
-  // Head
-  const headGeo = new THREE.BoxGeometry(0.5, 0.5, 0.5);
-  const headMat = new THREE.MeshStandardMaterial({ color: 0xffcc99 });
-  const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = 1.45;
-  
-  group.add(body); group.add(head);
-  group.position.set(data.x, data.y, data.z);
-  scene.add(group);
-  
-  if (id === myId) {
-    myPlayer = group;
-    // Hide our own body so it doesn't block the camera
-    body.visible = false; head.visible = false;
-  } else {
-    group.userData.id = id;
-    players[id] = group;
-    hitboxes.push(group); // Add to Raycaster targets
-  }
-}
-
-// 5. INPUT CONTROLS
-const keys = { w: false, a: false, s: false, d: false, space: false };
-
-// PC Mouse Look & Shoot
-document.body.addEventListener('click', () => { if(!isDead) document.body.requestPointerLock(); });
+let yaw = 0, pitch = 0;
 document.addEventListener('mousemove', (e) => {
-  if (document.pointerLockElement === document.body && !isDead) {
+  if (document.pointerLockElement) {
     yaw -= e.movementX * 0.002;
     pitch -= e.movementY * 0.002;
-    pitch = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, pitch)); // Prevent snapping neck
-  }
-});
-document.addEventListener('mousedown', (e) => { if(e.button === 0) isShooting = true; });
-document.addEventListener('mouseup', (e) => { if(e.button === 0) isShooting = false; });
-document.addEventListener('keydown', (e) => {
-    if(e.key === 'r') triggerReload();
-    if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; 
-    if(e.key === ' ') keys.space = true;
-});
-document.addEventListener('keyup', (e) => {
-    if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false;
-    if(e.key === ' ') keys.space = false;
-});
-
-// Mobile Look & Shoot
-const lookZone = document.getElementById('look-zone');
-let lastTouchX = 0, lastTouchY = 0;
-
-lookZone.addEventListener('touchstart', (e) => {
-  if(e.target.id === 'look-zone') {
-    lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY;
-  }
-});
-lookZone.addEventListener('touchmove', (e) => {
-  if(e.target.id === 'look-zone' && !isDead) {
-    const touch = e.touches[0];
-    yaw -= (touch.clientX - lastTouchX) * 0.005;
-    pitch -= (touch.clientY - lastTouchY) * 0.005;
     pitch = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, pitch));
-    lastTouchX = touch.clientX; lastTouchY = touch.clientY;
   }
 });
 
-const bindBtn = (id, key) => {
-  const btn = document.getElementById(id);
-  btn.addEventListener('touchstart', (e) => { e.preventDefault(); keys[key] = true; });
-  btn.addEventListener('touchend', (e) => { e.preventDefault(); keys[key] = false; });
-};
-bindBtn('btn-w', 'w'); bindBtn('btn-a', 'a'); bindBtn('btn-s', 's'); bindBtn('btn-d', 'd'); bindBtn('btn-jump', 'space');
-
-const shootBtn = document.getElementById('btn-shoot');
-shootBtn.addEventListener('touchstart', (e) => { e.preventDefault(); isShooting = true; });
-shootBtn.addEventListener('touchend', (e) => { e.preventDefault(); isShooting = false; });
-
-document.getElementById('btn-reload').addEventListener('touchstart', (e) => { e.preventDefault(); triggerReload(); });
-
-// 6. WEAPON LOGIC
-function triggerReload() {
-  if(isReloading || ammo === 30 || isDead) return;
-  isReloading = true;
-  document.getElementById('ammo-val').innerText = "REL";
-  
-  setTimeout(() => {
-    if(isDead) return; // Cancel if killed while reloading
-    ammo = 30;
-    isReloading = false;
-    document.getElementById('ammo-val').innerText = ammo;
-  }, 2000);
-}
-
-function handleShooting() {
-  if(isDead) return;
-  if(isReloading) return;
-  if(ammo <= 0) { triggerReload(); return; }
-
-  const now = Date.now();
-  if (isShooting && now - lastShotTime > fireRate) {
-    ammo--;
-    document.getElementById('ammo-val').innerText = ammo;
-    lastShotTime = now;
-
-    // Visual Recoil
-    gunGroup.position.z = -0.4; 
-    setTimeout(() => gunGroup.position.z = -0.5, 50);
-
-    // Hitscan detection
-    raycaster.setFromCamera(screenCenter, camera);
-    const intersects = raycaster.intersectObjects(hitboxes, true); // true = check children (head/body)
-    
-    if (intersects.length > 0) {
-      // Traverse up to find the parent group with the UserData ID
-      let hitObject = intersects[0].object;
-      while(hitObject.parent && !hitObject.userData.id) { hitObject = hitObject.parent; }
-      
-      if(hitObject.userData.id) {
-        socket.emit('hitTarget', hitObject.userData.id);
-      }
+function startMining() {
+  isMining = true;
+  raycaster.setFromCamera(screenCenter, camera);
+  const hits = raycaster.intersectObjects(interactables);
+  if(hits.length > 0 && hits[0].distance < 15) { // Range check
+    const hitObj = hits[0].object;
+    if(hitObj.userData.isDeposit) {
+      // Fire the laser visually
+      laserLine.geometry.setFromPoints([camera.position, hits[0].point]);
+      socket.emit('startMining', hitObj.userData.type);
     }
   }
 }
 
-// 7. THE GAME LOOP
+function stopMining() {
+  isMining = false;
+  laserLine.geometry.setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+  socket.emit('stopMining');
+}
+
+// Game Loop
 function animate() {
   requestAnimationFrame(animate);
 
-  if (myPlayer && !isDead) {
-    let moved = false;
-
-    // Apply Camera Rotations
+  if (loginScreen.style.display === 'none') {
     camera.rotation.set(pitch, yaw, 0, 'YXZ');
+    const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+    const right = new THREE.Vector3(); right.crossVectors(camera.up, dir).normalize();
+
+    const speed = 0.2;
+    if (keys.w) camera.position.addScaledVector(dir, speed);
+    if (keys.s) camera.position.addScaledVector(dir, -speed);
+    if (keys.a) camera.position.addScaledVector(right, speed);
+    if (keys.d) camera.position.addScaledVector(right, -speed);
     
-    // Calculate movement relative to where we are looking
-    const direction = new THREE.Vector3();
-    camera.getWorldDirection(direction);
-    direction.y = 0; // Don't fly into the sky
-    direction.normalize();
-    
-    const right = new THREE.Vector3();
-    right.crossVectors(camera.up, direction).normalize();
-
-    if (keys.w) { myPlayer.position.addScaledVector(direction, speed); moved = true; }
-    if (keys.s) { myPlayer.position.addScaledVector(direction, -speed); moved = true; }
-    if (keys.a) { myPlayer.position.addScaledVector(right, speed); moved = true; }
-    if (keys.d) { myPlayer.position.addScaledVector(right, -speed); moved = true; }
-
-    // Gravity & Jumping
-    velocityY += gravity;
-    myPlayer.position.y += velocityY;
-
-    if (myPlayer.position.y <= 0) {
-      myPlayer.position.y = 0;
-      velocityY = 0;
-      isGrounded = true;
-    } else {
-      isGrounded = false;
+    // Keep laser attached to camera if mining
+    if(isMining) {
+      raycaster.setFromCamera(screenCenter, camera);
+      const hits = raycaster.intersectObjects(interactables);
+      if(hits.length > 0 && hits[0].distance < 15) {
+        // Drop the laser slightly below camera so it looks like a handheld tool
+        const laserStart = camera.position.clone().add(new THREE.Vector3(0, -0.5, 0));
+        laserLine.geometry.setFromPoints([laserStart, hits[0].point]);
+      } else { stopMining(); }
     }
-
-    if (keys.space && isGrounded) { velocityY = 0.35; moved = true; }
-
-    // Lock camera to player head
-    camera.position.copy(myPlayer.position).add(cameraOffset);
-
-    // Reload Animation (Tilt gun down)
-    if (isReloading) {
-      gunGroup.rotation.x = THREE.MathUtils.lerp(gunGroup.rotation.x, Math.PI / 4, 0.1);
-    } else {
-      gunGroup.rotation.x = THREE.MathUtils.lerp(gunGroup.rotation.x, 0, 0.2);
-    }
-
-    handleShooting();
-
-    if (moved || yaw !== 0 || pitch !== 0) {
-      socket.emit('playerMovement', { x: myPlayer.position.x, y: myPlayer.position.y, z: myPlayer.position.z, yaw: yaw });
-    }
-  } else if (isDead) {
-    // Look up at the sky when dead
-    camera.rotation.set(Math.PI/2, 0, 0);
   }
 
   renderer.render(scene, camera);
