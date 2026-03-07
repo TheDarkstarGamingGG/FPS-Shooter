@@ -1,3 +1,20 @@
+function log(msg) {
+  document.getElementById('debug').innerText = msg;
+  console.log(msg);
+}
+
+// Update your login button listener to this:
+document.getElementById('btn-login').addEventListener('click', () => {
+  const u = document.getElementById('username').value;
+  const p = document.getElementById('password').value;
+  log(`Attempting login for: ${u}`); // This will show on your phone screen!
+  if(u && p) socket.emit('login', { username: u, password: p });
+});
+
+socket.on('connect', () => log("Connected to Server!"));
+socket.on('connect_error', (err) => log("Connect Error: " + err));
+socket.on('initGame', (data) => log("Game Starting..."));
+
 import * as THREE from 'three';
 
 window.socket = io();
