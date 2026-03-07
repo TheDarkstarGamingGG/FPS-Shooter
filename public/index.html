@@ -2,60 +2,63 @@
 <html>
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Browser Automation MMO</title>
+  <title>Factory MMO</title>
   <style>
-    body { margin: 0; overflow: hidden; background: #111; font-family: monospace; color: white; touch-action: none; }
+    body { margin: 0; overflow: hidden; background: #87CEEB; font-family: sans-serif; touch-action: none; }
     canvas { display: block; }
     
-    /* Login Screen */
-    #login-screen { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
-    input { margin: 10px; padding: 10px; font-size: 16px; font-family: monospace; background: #222; border: 1px solid #0f0; color: #0f0; }
-    button { padding: 10px 20px; font-size: 16px; font-weight: bold; background: #0f0; color: #000; border: none; cursor: pointer; }
+    /* Login */
+    #login-screen { position: absolute; inset: 0; background: #111; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 100; }
+    input { margin: 5px; padding: 12px; background: #222; border: 1px solid #0f0; color: #0f0; width: 200px; }
+
+    /* HUD Elements */
+    #crosshair { position: absolute; top: 50%; left: 50%; width: 6px; height: 6px; background: rgba(255,255,255,0.5); transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; border: 1px solid #000; }
     
-    /* HUD & Menus */
-    #crosshair { position: absolute; top: 50%; left: 50%; width: 10px; height: 10px; background: red; transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; z-index: 10;}
-    #hud { position: absolute; top: 10px; left: 10px; pointer-events: none; z-index: 10; text-shadow: 1px 1px 0 #000; }
-    #crafting-menu { position: absolute; top: 10px; right: 10px; background: rgba(0,0,0,0.8); border: 1px solid #0f0; padding: 10px; z-index: 20; max-height: 80vh; overflow-y: auto; }
-    .craft-btn { display: block; width: 100%; margin: 5px 0; background: #333; color: white; border: 1px solid #555; text-align: left; }
-    
+    /* Collapsible Crafting Menu */
+    #menu-container { position: absolute; top: 10px; right: 10px; width: 180px; z-index: 50; }
+    #toggle-craft { width: 100%; padding: 10px; background: #ff8c00; border: none; font-weight: bold; color: white; border-radius: 5px; }
+    #crafting-menu { display: none; background: rgba(0,0,0,0.85); border: 1px solid #ff8c00; padding: 10px; margin-top: 5px; max-height: 60vh; overflow-y: auto; border-radius: 5px; }
+    .craft-btn { display: block; width: 100%; margin: 4px 0; background: #333; color: #fff; border: 1px solid #555; padding: 8px; font-size: 12px; text-align: left; border-radius: 3px; }
+
+    /* Hotbar */
+    #hotbar { position: absolute; bottom: 85px; left: 50%; transform: translateX(-50%); display: flex; gap: 5px; z-index: 40; }
+    .slot { width: 45px; height: 45px; background: rgba(0,0,0,0.6); border: 2px solid #555; display: flex; flex-direction: column; align-items: center; justify-content: center; font-size: 9px; color: white; border-radius: 4px; }
+    .slot.active { border-color: #0f0; background: rgba(0,255,0,0.2); }
+
     /* Mobile Controls */
-    #mobile-ui { position: absolute; bottom: 20px; width: 100%; height: 30%; display: flex; justify-content: space-between; pointer-events: none; z-index: 5;}
-    #move-zone { width: 40%; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; pointer-events: auto; padding-left: 20px; align-items: end;}
-    #action-zone { width: 50%; pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; padding-right: 20px; gap: 10px; }
-    .btn { width: 50px; height: 50px; background: rgba(255, 255, 255, 0.2); border: 1px solid #fff; display: flex; justify-content: center; align-items: center; }
-    .action-btn { width: 70px; height: 70px; border-radius: 50%; background: rgba(255,0,0,0.4); border: 2px solid #f00; }
+    #mobile-ui { position: absolute; bottom: 10px; width: 100%; display: flex; justify-content: space-between; pointer-events: none; z-index: 30;}
+    #move-zone { width: 120px; height: 120px; margin-left: 15px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; pointer-events: auto; }
+    #action-zone { width: 120px; margin-right: 15px; pointer-events: auto; display: flex; flex-direction: column; align-items: flex-end; justify-content: flex-end; gap: 10px; }
+    .btn { background: rgba(255,255,255,0.15); border: 1px solid #fff; border-radius: 8px; display: flex; justify-content: center; align-items: center; color: white; font-weight: bold; }
+    .action-btn { width: 70px; height: 70px; border-radius: 50%; background: rgba(255,140,0,0.4); border: 2px solid #ff8c00; color: white; font-weight: bold; }
   </style>
 </head>
 <body>
-  <script type="importmap">
-    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
-  </script>
-  <script src="/socket.io/socket.io.js"></script>
-
   <div id="login-screen">
-    <h1 style="color:#0f0">FACTORY MMO</h1>
+    <h2 style="color:#ff8c00">FACTORY MMO</h2>
     <input type="text" id="username" placeholder="Username">
     <input type="password" id="password" placeholder="Password">
-    <button id="btn-login">JOIN / CREATE</button>
+    <button onclick="login()" style="padding:10px 40px; background:#ff8c00; border:none; color:white; font-weight:bold; margin-top:10px;">JOIN</button>
   </div>
 
   <div id="crosshair"></div>
-  
-  <div id="hud">
-    <h3>INVENTORY</h3>
-    <pre id="inv-display">Loading...</pre>
+
+  <div id="menu-container">
+    <button id="toggle-craft">CRAFTING ▼</button>
+    <div id="crafting-menu">
+      <button class="craft-btn" onclick="socket.emit('craft', 'furnace')">Furnace (10 Stone)</button>
+      <button class="craft-btn" onclick="socket.emit('craft', 'iron_ingot')">Iron Ingot (1 Iron)</button>
+      <button class="craft-btn" onclick="socket.emit('craft', 'bolts')">Bolts (1 Iron Ingot)</button>
+      <button class="craft-btn" onclick="socket.emit('craft', 'wire')">3x Wire (1 Copper)</button>
+      <button class="craft-btn" onclick="socket.emit('craft', 'drill')">Drill (5 Wire, 10 Bolt, 1 Gold)</button>
+    </div>
   </div>
 
-  <div id="crafting-menu">
-    <h3>CRAFTING</h3>
-    <button class="craft-btn" onclick="socket.emit('craft', 'furnace')">Furnace (10 Stone)</button>
-    <button class="craft-btn" onclick="socket.emit('craft', 'iron_ingot')">Iron Ingot (1 Iron Ore)</button>
-    <button class="craft-btn" onclick="socket.emit('craft', 'copper_ingot')">Copper Ingot (1 Copper Ore)</button>
-    <button class="craft-btn" onclick="socket.emit('craft', 'gold_ingot')">Gold Ingot (1 Gold Ore)</button>
-    <button class="craft-btn" onclick="socket.emit('craft', 'bolts')">Bolts (1 Iron Ingot)</button>
-    <button class="craft-btn" onclick="socket.emit('craft', 'wire')">3x Wire (1 Copper Ingot)</button>
-    <button class="craft-btn" onclick="socket.emit('craft', 'crafting_station')">Crafting Station (10 Bolts, 5 Iron Ingot)</button>
-    <button class="craft-btn" style="border-color:gold" onclick="socket.emit('craft', 'drill')">Tier 1 Drill (5 Wire, 10 Bolts, 1 Gold Ingot)</button>
+  <div id="hotbar">
+    <div class="slot active" id="slot-0"><span>LASER</span></div>
+    <div class="slot" id="slot-1"><span>DRILL</span><b id="count-drill">0</b></div>
+    <div class="slot" id="slot-2"><span>FURNACE</span><b id="count-furnace">0</b></div>
+    <div class="slot" id="slot-3"><span>INV</span><b id="count-stone">0</b></div>
   </div>
 
   <div id="mobile-ui">
@@ -64,12 +67,12 @@
       <div class="btn" id="btn-a">A</div><div class="btn" id="btn-s">S</div><div class="btn" id="btn-d">D</div>
     </div>
     <div id="action-zone">
-      <div class="action-btn" id="btn-mine">MINE</div>
+      <div class="action-btn" id="btn-action">ACTION</div>
     </div>
   </div>
-  
-<div id="debug" style="position:fixed; bottom:0; left:0; width:100%; background:rgba(0,0,0,0.8); color:#0f0; font-size:10px; z-index:1000; pointer-events:none; height:50px; overflow:hidden;">Debug: Waiting for input...</div>
-  
+
+  <script type="importmap">{ "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }</script>
+  <script src="/socket.io/socket.io.js"></script>
   <script type="module" src="client.js"></script>
 </body>
 </html>
