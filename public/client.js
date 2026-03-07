@@ -1,174 +1,171 @@
-function log(msg) {
-  document.getElementById('debug').innerText = msg;
-  console.log(msg);
-}
-
-// Update your login button listener to this:
-document.getElementById('btn-login').addEventListener('click', () => {
-  const u = document.getElementById('username').value;
-  const p = document.getElementById('password').value;
-  log(`Attempting login for: ${u}`); // This will show on your phone screen!
-  if(u && p) socket.emit('login', { username: u, password: p });
-});
-
-socket.on('connect', () => log("Connected to Server!"));
-socket.on('connect_error', (err) => log("Connect Error: " + err));
-socket.on('initGame', (data) => log("Game Starting..."));
-
 import * as THREE from 'three';
-
 window.socket = io();
 
-// UI Elements
-const loginScreen = document.getElementById('login-screen');
-const invDisplay = document.getElementById('inv-display');
+// UI State
+let currentSlot = 0; // 0 = Laser, 1 = Drill, 2 = Furnace
+const toggleBtn = document.getElementById('toggle-craft');
+const craftMenu = document.getElementById('crafting-menu');
 
-// 3D Scene Setup
+toggleBtn.onclick = () => {
+  const isOpen = craftMenu.style.display === 'block';
+  craftMenu.style.display = isOpen ? 'none' : 'block';
+  toggleBtn.innerText = isOpen ? 'CRAFTING ▼' : 'CLOSE ▲';
+};
+
+// 3. Scene setup (Brighter for mobile)
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0x222222);
+scene.background = new THREE.Color(0x87CEEB); // Sky Blue
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-const renderer = new THREE.WebGLRenderer({ antialias: true });
+const renderer = new THREE.WebGLRenderer({ antialias: false }); // Disable antialias for mobile performance
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-const light = new THREE.DirectionalLight(0xffffff, 1);
-light.position.set(10, 20, 10);
+const light = new THREE.DirectionalLight(0xffffff, 1.2);
+light.position.set(10, 50, 10);
 scene.add(light);
-scene.add(new THREE.AmbientLight(0x404040));
+scene.add(new THREE.AmbientLight(0xaaaaaa));
 
-const grid = new THREE.GridHelper(500, 100, 0x0f0, 0x333333);
+// Ground (Green)
+const groundGeo = new THREE.PlaneGeometry(1000, 1000);
+const groundMat = new THREE.MeshStandardMaterial({ color: 0x228B22 });
+const ground = new THREE.Mesh(groundGeo, groundMat);
+ground.rotation.x = -Math.PI / 2;
+scene.add(ground);
+
+const grid = new THREE.GridHelper(1000, 50, 0x000000, 0x111111);
+grid.position.y = 0.01;
 scene.add(grid);
+
+// Mining Laser
+const laserMat = new THREE.LineBasicMaterial({ color: 0x00ffff, linewidth: 5 });
+const laserGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
+const laserLine = new THREE.Line(laserGeo, laserMat);
+scene.add(laserLine);
 
 // Game State
 let myOffset = { x: 0, z: 0 };
-const interactables = []; // Things we can shoot with laser
-let isMining = false;
+const interactables = [];
+let inventory = {};
 
-// Mining Laser Visual
-const materialLine = new THREE.LineBasicMaterial({ color: 0xff0000, linewidth: 3 });
-const geometryLine = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
-const laserLine = new THREE.Line(geometryLine, materialLine);
-scene.add(laserLine);
-
-// Materials for Deposits
-const matColors = {
-  iron: 0x888888, copper: 0xb87333, gold: 0xffd700, stone: 0x555555
-};
-
-// Login Logic
-document.getElementById('btn-login').addEventListener('click', () => {
+window.login = () => {
   const u = document.getElementById('username').value;
   const p = document.getElementById('password').value;
   if(u && p) socket.emit('login', { username: u, password: p });
-});
+};
 
 socket.on('initGame', (data) => {
-  loginScreen.style.display = 'none';
+  document.getElementById('login-screen').style.display = 'none';
   myOffset = data.offset;
-  
-  // Start player in the middle of their plot
-  camera.position.set(myOffset.x, 2, myOffset.z + 10);
-  
-  updateInventoryUI(data.inventory);
+  camera.position.set(myOffset.x, 3, myOffset.z + 5); // Lifted camera to avoid ground
+  updateInventory(data.inventory);
   buildPlot(data.offset, data.plotData);
-  
-  // Enable pointer lock for PC
-  document.body.requestPointerLock();
 });
 
-socket.on('spawnPlot', (data) => buildPlot(data.offset, data.plotData));
-socket.on('updateInventory', (inv) => updateInventoryUI(inv));
+socket.on('updateInventory', (inv) => updateInventory(inv));
 
-function updateInventoryUI(inv) {
-  let str = '';
-  for(let key in inv) { if(inv[key] > 0) str += `${key}: ${inv[key]}\n`; }
-  invDisplay.innerText = str || 'Empty';
+function updateInventory(inv) {
+  inventory = inv;
+  // Update Hotbar labels
+  document.getElementById('count-drill').innerText = inv.drill || 0;
+  document.getElementById('count-furnace').innerText = inv.furnace || 0;
+  document.getElementById('count-stone').innerText = (inv.stone || 0) + (inv.iron_ore || 0);
 }
 
+const matColors = { iron: 0x777777, copper: 0xCD7F32, gold: 0xFFD700, stone: 0x333333 };
+
 function buildPlot(offset, plotData) {
-  // Build Deposits
   plotData.deposits.forEach(dep => {
-    const geo = new THREE.BoxGeometry(2, 2, 2);
+    const geo = new THREE.BoxGeometry(2, 1, 2);
     const mat = new THREE.MeshStandardMaterial({ color: matColors[dep.type] });
     const mesh = new THREE.Mesh(geo, mat);
-    // Apply local coordinates + room offset
-    mesh.position.set(offset.x + dep.x, 1, offset.z + dep.z);
+    mesh.position.set(offset.x + dep.x, 0.5, offset.z + dep.z);
     mesh.userData = { isDeposit: true, type: dep.type };
     scene.add(mesh);
     interactables.push(mesh);
   });
 }
 
-// Input & Mining Logic
-const keys = { w: false, a: false, s: false, d: false };
-const raycaster = new THREE.Raycaster();
-const screenCenter = new THREE.Vector2(0, 0);
-
-document.addEventListener('keydown', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = true; });
-document.addEventListener('keyup', e => { if(keys.hasOwnProperty(e.key.toLowerCase())) keys[e.key.toLowerCase()] = false; });
-document.addEventListener('mousedown', () => startMining());
-document.addEventListener('mouseup', () => stopMining());
-
-const mineBtn = document.getElementById('btn-mine');
-mineBtn.addEventListener('touchstart', e => { e.preventDefault(); startMining(); });
-mineBtn.addEventListener('touchend', e => { e.preventDefault(); stopMining(); });
-
+// Controls
 let yaw = 0, pitch = 0;
-document.addEventListener('mousemove', (e) => {
-  if (document.pointerLockElement) {
-    yaw -= e.movementX * 0.002;
-    pitch -= e.movementY * 0.002;
-    pitch = Math.max(-Math.PI/2.1, Math.min(Math.PI/2.1, pitch));
+const keys = { w:false, a:false, s:false, d:false };
+
+// Mobile Swipe to Look
+let lastTouchX = 0, lastTouchY = 0;
+document.addEventListener('touchstart', e => { 
+  if(e.target.tagName === 'CANVAS') {
+    lastTouchX = e.touches[0].clientX; lastTouchY = e.touches[0].clientY; 
+  }
+});
+document.addEventListener('touchmove', e => {
+  if(e.target.tagName === 'CANVAS') {
+    const touch = e.touches[0];
+    yaw -= (touch.clientX - lastTouchX) * 0.005;
+    pitch -= (touch.clientY - lastTouchY) * 0.005;
+    pitch = Math.max(-1.5, Math.min(1.5, pitch));
+    lastTouchX = touch.clientX; lastTouchY = touch.clientY;
   }
 });
 
-function startMining() {
-  isMining = true;
-  raycaster.setFromCamera(screenCenter, camera);
-  const hits = raycaster.intersectObjects(interactables);
-  if(hits.length > 0 && hits[0].distance < 15) { // Range check
-    const hitObj = hits[0].object;
-    if(hitObj.userData.isDeposit) {
-      // Fire the laser visually
-      laserLine.geometry.setFromPoints([camera.position, hits[0].point]);
-      socket.emit('startMining', hitObj.userData.type);
-    }
-  }
-}
+// Action Logic
+const actionBtn = document.getElementById('btn-action');
+let isActing = false;
+actionBtn.addEventListener('touchstart', e => { e.preventDefault(); isActing = true; });
+actionBtn.addEventListener('touchend', e => { e.preventDefault(); isActing = false; stopAction(); });
 
-function stopMining() {
-  isMining = false;
+function stopAction() {
   laserLine.geometry.setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,0)]);
   socket.emit('stopMining');
 }
 
-// Game Loop
-function animate() {
-  requestAnimationFrame(animate);
+// Switching Slots
+document.querySelectorAll('.slot').forEach((s, idx) => {
+  s.onclick = () => {
+    document.querySelector('.slot.active').classList.remove('active');
+    s.classList.add('active');
+    currentSlot = idx;
+  };
+});
 
-  if (loginScreen.style.display === 'none') {
-    camera.rotation.set(pitch, yaw, 0, 'YXZ');
-    const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
-    const right = new THREE.Vector3(); right.crossVectors(camera.up, dir).normalize();
-
-    const speed = 0.2;
-    if (keys.w) camera.position.addScaledVector(dir, speed);
-    if (keys.s) camera.position.addScaledVector(dir, -speed);
-    if (keys.a) camera.position.addScaledVector(right, speed);
-    if (keys.d) camera.position.addScaledVector(right, -speed);
+const raycaster = new THREE.Raycaster();
+function handleAction() {
+  if(!isActing) return;
+  
+  raycaster.setFromCamera(new THREE.Vector2(0,0), camera);
+  const hits = raycaster.intersectObjects(interactables);
+  
+  if(hits.length > 0 && hits[0].distance < 10) {
+    const obj = hits[0].object;
     
-    // Keep laser attached to camera if mining
-    if(isMining) {
-      raycaster.setFromCamera(screenCenter, camera);
-      const hits = raycaster.intersectObjects(interactables);
-      if(hits.length > 0 && hits[0].distance < 15) {
-        // Drop the laser slightly below camera so it looks like a handheld tool
-        const laserStart = camera.position.clone().add(new THREE.Vector3(0, -0.5, 0));
-        laserLine.geometry.setFromPoints([laserStart, hits[0].point]);
-      } else { stopMining(); }
+    if(currentSlot === 0 && obj.userData.isDeposit) { // Laser
+      const laserStart = camera.position.clone().add(new THREE.Vector3(0,-0.5,0));
+      laserLine.geometry.setFromPoints([laserStart, hits[0].point]);
+      socket.emit('startMining', obj.userData.type);
     }
   }
+}
 
+// Loop
+function animate() {
+  requestAnimationFrame(animate);
+  camera.rotation.set(pitch, yaw, 0, 'YXZ');
+  
+  const dir = new THREE.Vector3(); camera.getWorldDirection(dir); dir.y = 0; dir.normalize();
+  const side = new THREE.Vector3().crossVectors(camera.up, dir).normalize();
+  
+  if(keys.w) camera.position.addScaledVector(dir, 0.15);
+  if(keys.s) camera.position.addScaledVector(dir, -0.15);
+  if(keys.a) camera.position.addScaledVector(side, 0.15);
+  if(keys.d) camera.position.addScaledVector(side, -0.15);
+
+  handleAction();
   renderer.render(scene, camera);
 }
 animate();
+
+// Map Move Buttons
+const bind = (id, k) => {
+  const b = document.getElementById(id);
+  b.ontouchstart = (e) => { e.preventDefault(); keys[k] = true; };
+  b.ontouchend = (e) => { e.preventDefault(); keys[k] = false; };
+};
+bind('btn-w', 'w'); bind('btn-a', 'a'); bind('btn-s', 's'); bind('btn-d', 'd');
