@@ -1,5 +1,5 @@
 {
-  "name": "FPS-Shooter",
+  "name": "fps-Shooter",
   "version": "1.0.0",
   "description": "Multiplayer 3D Engine",
   "main": "server.js",
